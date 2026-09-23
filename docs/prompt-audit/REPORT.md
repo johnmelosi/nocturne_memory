@@ -6,6 +6,7 @@ Companion diff: [`proposed.diff`](proposed.diff). Nothing in the repo has been c
 
 - **Scope:** the whole repo's prompt surface (inventory below). No narrower scope was requested.
 - **Target model:** the current Claude generation (Claude Opus 5 / Claude Opus 5.5 / Claude Fable 5.1). The repo pins no model and makes no LLM API calls. It is an MCP server driven by whichever client the user connects, plus a heartbeat script that talks to OpenCode. No markers for other providers (OpenAI, Gemini, etc.) were found. If you mostly run a different model, re-run with that model named.
+- **Opus 5.5 pass:** re-checked against Anthropic's Claude Opus 5.5 migration guidance (the "Migrating to Claude Opus 5.5" section bundled with the claude-api skill). The blog post "Getting the most out of Opus 5.5" couldn't be fetched from this environment, so points unique to it are not reflected.
 - **Language:** Python backend with a JS frontend. The prompt text is mostly Chinese, with English tool docstrings.
 
 ## Inventory
@@ -28,6 +29,7 @@ Companion diff: [`proposed.diff`](proposed.diff). Nothing in the repo has been c
 |---|---|---|
 | 1a Pressure language (incl. Group 3 over-steering) | 4 (F1, F5, F6, F7) | 1 (L5) |
 | 1b Scaffolds / visible-reasoning mandates | 2 (F9, F10) | 0 |
+| Opus 5.5 re-baseline (additions) | 1 (F11) | 0 |
 | 1c Over-specification / padding / examples | 3 (F2, F3, F4) | 1 (L4) |
 | 1d Fossils / Group 2 (re-insertion, unenforced rules, incidents) | 1 (F8) | 3 (L1, L2, L3) |
 | 4 Request config | 0 (the repo makes no API calls) | 1 bug (L6), 1 note (L7) |
@@ -54,8 +56,8 @@ Companion diff: [`proposed.diff`](proposed.diff). Nothing in the repo has been c
 - **Location:** `docs/skills/memory-audit/SKILL.md:62-64`
 - **Evidence:** "强制执行此步骤。你必须把下面这段缓冲**直接输出在你的回复正文里**——不是藏在 thinking block、chain-of-thought 或任何形式的内部推理中…"
 - **Pattern:** 1b "Show your thinking / required reasoning sections in the output"
-- **Why obsolete:** Thinking is always on in Claude Fable 5.1 and Claude Opus 5.5. An instruction that tells the model to reproduce its reasoning in the reply can trigger a `reasoning_extraction` refusal, which is not retried on fallback. Asking for a written reflection is fine. Framing it as "pull your thinking out into the reply" is the risky part.
-- **Confidence:** Medium
+- **Why obsolete:** Thinking is always on in Claude Fable 5.1 and Claude Opus 5.5. Anthropic's Opus 5.5 guidance says a request that tries to get the model to reproduce its internal reasoning in the response can be declined as `reasoning_extraction`, and that decline is not retried on a fallback model. This text names the thinking block and chain-of-thought explicitly and demands they appear in the reply. Asking for a written reflection is fine; the "pull your thinking out" framing is the risk.
+- **Confidence:** High on Claude Opus 5.5 / Fable 5.1, Medium on other models
 - **Action:** rewrite. Keep the five reflection questions and the "this voice becomes the memory's voice" rationale. Drop the thinking-block and chain-of-thought language and the "强制" framing.
 
 **F10: Heartbeat mandates a four-step deliberation before any tool call**
@@ -65,6 +67,13 @@ Companion diff: [`proposed.diff`](proposed.diff). Nothing in the repo has been c
 - **Why obsolete:** Current models plan without being told, and a scripted pre-tool deliberation leads to over-planning. The script's own "Anti-Parasite" section already complains about long deliberation followed by a trivial action ("写了800字…最后只是读取一下文件"). The mandate helps produce that failure.
 - **Confidence:** Medium
 - **Action:** rewrite the mandate line. The four steps stay as the lens for choosing an action, and the reply only needs a one- or two-sentence conclusion.
+
+**F11: [speak] can get lost in Opus 5.5 progress notes (add)**
+- **Location:** `desktop_pet/opencode_heartbeat.py:162` (prompt) and `:286-297` (`extract_response_text` reads only `type == "text"` parts)
+- **Evidence:** the heartbeat scans every assistant text part of the turn for `[speak]`, including notes written between tool calls.
+- **Pattern:** re-baselining (keep list #11). On Claude Opus 5.5, notes longer than a sentence or two between tool calls come back as progress-update `thinking` blocks, empty unless the client requests `display: "updates"`. A `[speak]` written mid-turn can therefore fail to reach the text-only extractor, and the pet stays silent.
+- **Confidence:** Medium. It depends on how OpenCode surfaces those blocks, which I couldn't check here.
+- **Action:** add a line to the protocol: put `[speak]` in the final reply of the cycle, not in notes between tool calls. If you want mid-turn speech, the more robust fix is a dedicated speak tool declared from the session's first request.
 
 **F3: Section marked non-live still ships in the system prompt**
 - **Location:** `docs/system_prompt.md:70-106`
@@ -117,6 +126,13 @@ Companion diff: [`proposed.diff`](proposed.diff). Nothing in the repo has been c
 | L5 | `backend/mcp_server.py:451` (search_memory) | "Do NOT guess URIs." | A mild duplicate of the system prompt's L32. It is harmless and part of the contract. | Low |
 | L6 | `backend/mcp_server.py:637` | `f"Success: Memory created at '{created_uri}'\\n\\n"` | **Bug, not cruft:** the doubled backslash sends a literal `\n\n` to the model instead of newlines. The pre-audit text has the same bug on every line. Hunk F8 keeps this line as-is so the diff stays one finding per hunk. Change `\\n` to `\n` separately. | High (bug) |
 | L7 | `desktop_pet/opencode_heartbeat.py:151-156` | Timestamp + random factor at the top of each heartbeat | Not a cache problem: each heartbeat is a new user turn appended after stable history. Noted so nobody "fixes" it. | — |
+
+### Opus 5.5 items checked and not applicable
+
+- `thinking: disabled` / `budget_tokens`, forced `tool_choice`, the computer-use toolset, and the effort default (`medium`) all concern API request code, and this repo sends no model requests. If you drive it through your own harness on Opus 5.5, set `effort` explicitly there.
+- Visual-input scaffolding: the heartbeat attaches a screenshot with no chart-reading or crop instructions, so there's nothing to remove.
+- Opus 5-specific verbosity, verification and scope instructions: none are present.
+- The `bio` classifier and frontend design direction are not relevant to this prompt surface.
 
 ### Left alone on purpose (keep list)
 
